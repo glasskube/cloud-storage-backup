@@ -5,6 +5,8 @@ function abort() {
   exit 1
 }
 
+DEBUG=${DEBUG:-0}
+
 if [ "$DEBUG" -gt 0 ]; then
   env
   cat /config/rclone/rclone.conf
