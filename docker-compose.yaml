@@ -1,0 +1,33 @@
+services:
+  minio:
+    image: quay.io/minio/minio
+    command:
+      - server
+      - /data
+      - --console-address
+      - ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    networks:
+      - internal
+
+  s3-backup:
+    image: ghcr.io/glasskube/cloud-storage-backup:latest
+    environment:
+      SRC_REMOTE: minio
+      SRC_BUCKET: source
+      DST_REMOTE: minio
+      DST_BUCKET: backup
+      BACKUP_TTL: 60
+      DEBUG: 1
+    volumes:
+      - ./.config/rclone.conf:/config/rclone/rclone.conf
+    user: 1009:1009
+    networks:
+      - internal
+    depends_on:
+      - minio
+
+networks:
+  internal:
