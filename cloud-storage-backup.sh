@@ -28,27 +28,44 @@ if [ -z "$DST_BUCKET" ]; then
   abort "DST_BUCKET is not set"
 fi
 
-TIMESTAMP=$(date -u +%s)
+NEW_BACKUP=$(date -u +%s)
 SRC_DIR=${SRC_DIR:-"."}
 DST_DIR=${DST_DIR:-"s3"}
 SRC="$SRC_REMOTE:$SRC_BUCKET"
-DST="$DST_REMOTE:$DST_BUCKET/$DST_DIR/$TIMESTAMP"
+DST_ROOT="$DST_REMOTE:$DST_BUCKET/$DST_DIR"
+DST="$DST_ROOT/$NEW_BACKUP"
 
-printf "Copy from %s to %s\n" "$SRC" "$DST"
-rclone --progress copy "$SRC" "$DST" || abort "An error occurred while copying files"
+ALL_BACKUPS=$(rclone lsjson "$DST_ROOT" | jq -r .[].Name)
+printf "Existing backups found: %s\n" "$(echo "$ALL_BACKUPS" | wc -l)"
+
+LATEST_BACKUP=0
+for BACKUP in $ALL_BACKUPS; do
+  if [ "$BACKUP" -gt "$LATEST_BACKUP" ]; then
+    LATEST_BACKUP="$BACKUP"
+  fi
+done
+
+if [ "$LATEST_BACKUP" -gt 0 ]; then
+  printf "Latest existing backup is %s. Sync to %s\n" "$LATEST_BACKUP" "$DST"
+  rclone --verbose --progress sync "$DST_ROOT/$LATEST_BACKUP" "$DST" || printf "An error occurred while syncing from latest backup\n"
+else
+  printf "No existing backup found.\n"
+fi
+
+printf "Sync changes from %s to %s\n" "$SRC" "$DST"
+rclone --verbose --progress sync "$SRC" "$DST" || abort "An error occurred while syncing from source"
+
+BACKUP_TTL=${BACKUP_TTL:-0}
 
 if [ "$BACKUP_TTL" -gt 0 ]; then
   printf "Proceeding to purge old backups (BACKUP_TTL is %s seconds)\n" "$BACKUP_TTL"
 
-  ALL_BACKUPS=$(rclone lsjson "$DST_REMOTE:$DST_BUCKET/$DST_DIR" | jq -r .[].Name)
-  printf "Total backups found: %s\n" "$(echo "$ALL_BACKUPS" | wc -l)"
-
   for BACKUP in $ALL_BACKUPS; do
     # convert iso datetime string to epoch seconds and subtract to get the age in seconds
-    BACKUP_AGE=$((TIMESTAMP - BACKUP))
+    BACKUP_AGE=$((NEW_BACKUP - BACKUP))
     if [ "$BACKUP_AGE" -gt "$BACKUP_TTL" ]; then
       printf "Purge %s (age %d is greater than %d)\n" "$BACKUP" "$BACKUP_AGE" "$BACKUP_TTL"
-      rclone --progress purge "$DST_REMOTE:$DST_BUCKET/$DST_DIR/$BACKUP"
+      rclone --verbose --progress purge "$DST_ROOT/$BACKUP"
     elif [ "$DEBUG" -gt 0 ]; then
       printf "No purge needed for %s (age %d is less than %d)\n" "$BACKUP" "$BACKUP_AGE" "$BACKUP_TTL"
     fi
