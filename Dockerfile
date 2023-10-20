@@ -1,4 +1,4 @@
-FROM rclone/rclone:1.64.0
+FROM rclone/rclone:1.64.2
 
 LABEL authors="jakob.steiner@glasskube.eu"
 
