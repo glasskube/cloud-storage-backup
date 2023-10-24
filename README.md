@@ -17,7 +17,7 @@ are officially tested.
 ### Linux
 
 1. Ensure that the following dependencies are installed on your system:
-    - `bash` (used for arithmetic; `sh` does not work)
+    - `sh` (any POSIX compliant shell will work)
     - `coreutils` (preferred) or `busybox` (used for `printf`, `date`)
     - `rclone` (used to interact with cloud storage)
     - `jq` (used to parse output of `rclone lsjson`)
