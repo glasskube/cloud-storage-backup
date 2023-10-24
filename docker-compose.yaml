@@ -12,8 +12,8 @@ services:
     networks:
       - internal
 
-  s3-backup:
-    image: ghcr.io/glasskube/cloud-storage-backup:latest
+  cloud-storage-backup:
+    image: ghcr.io/glasskube/cloud-storage-backup:dev
     environment:
       SRC_REMOTE: minio
       SRC_BUCKET: source
