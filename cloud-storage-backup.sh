@@ -1,7 +1,23 @@
 #!/usr/bin/env bash
 
-function abort() {
-  printf "Fatal: %s\n" "$1"
+set -e
+
+log_debug() {
+  if [ "$DEBUG" -gt 0 ]; then
+    echo "DEBUG: $*" >&2
+  fi
+}
+
+log_info() {
+  echo "INFO: $*" >&2
+}
+
+log_warn() {
+  echo "WARN: $*" >&2
+}
+
+abort() {
+  echo "FATAL: $*" >&2
   exit 1
 }
 
@@ -9,7 +25,8 @@ DEBUG=${DEBUG:-0}
 
 if [ "$DEBUG" -gt 0 ]; then
   env
-  cat /config/rclone/rclone.conf
+  rclone config show ||
+    log_warn "rclone config could not be shown"
 fi
 
 if [ -z "$SRC_REMOTE" ]; then
@@ -34,9 +51,9 @@ DST_DIR=${DST_DIR:-"s3"}
 SRC="$SRC_REMOTE:$SRC_BUCKET"
 DST_ROOT="$DST_REMOTE:$DST_BUCKET/$DST_DIR"
 DST="$DST_ROOT/$NEW_BACKUP"
-
-ALL_BACKUPS=$(rclone lsjson "$DST_ROOT" | jq -r .[].Name)
-printf "Existing backups found: %s\n" "$(echo "$ALL_BACKUPS" | wc -l)"
+ALL_BACKUPS=$(rclone --verbose lsjson "$DST_ROOT" || abort "error reading from DST_REMOTE")
+ALL_BACKUPS=$(echo "$ALL_BACKUPS" | jq -r .[].Name)
+log_info "Existing backups found: $(echo "$ALL_BACKUPS" | wc -l)"
 
 LATEST_BACKUP=0
 for BACKUP in $ALL_BACKUPS; do
@@ -46,30 +63,33 @@ for BACKUP in $ALL_BACKUPS; do
 done
 
 if [ "$LATEST_BACKUP" -gt 0 ]; then
-  printf "Latest existing backup is %s. Sync to %s\n" "$LATEST_BACKUP" "$DST"
-  rclone --verbose --progress sync "$DST_ROOT/$LATEST_BACKUP" "$DST" || printf "An error occurred while syncing from latest backup\n"
+  log_info "Latest existing backup is $LATEST_BACKUP. Sync to $DST."
+  rclone --verbose sync "$DST_ROOT/$LATEST_BACKUP" "$DST" ||
+    log_warn "An error occurred while syncing from latest backup."
 else
-  printf "No existing backup found.\n"
+  log_info "No existing backup found."
 fi
 
-printf "Sync changes from %s to %s\n" "$SRC" "$DST"
-rclone --verbose --progress sync "$SRC" "$DST" || abort "An error occurred while syncing from source"
+log_info "Sync changes from $SRC to $DST"
+rclone --verbose sync "$SRC" "$DST" ||
+  abort "An error occurred while syncing from source"
 
 BACKUP_TTL=${BACKUP_TTL:-0}
 
 if [ "$BACKUP_TTL" -gt 0 ]; then
-  printf "Proceeding to purge old backups (BACKUP_TTL is %s seconds)\n" "$BACKUP_TTL"
+  log_info "Proceeding to purge old backups (BACKUP_TTL is $BACKUP_TTL seconds)."
 
   for BACKUP in $ALL_BACKUPS; do
     # convert iso datetime string to epoch seconds and subtract to get the age in seconds
     BACKUP_AGE=$((NEW_BACKUP - BACKUP))
     if [ "$BACKUP_AGE" -gt "$BACKUP_TTL" ]; then
-      printf "Purge %s (age %d is greater than %d)\n" "$BACKUP" "$BACKUP_AGE" "$BACKUP_TTL"
-      rclone --verbose --progress purge "$DST_ROOT/$BACKUP"
-    elif [ "$DEBUG" -gt 0 ]; then
-      printf "No purge needed for %s (age %d is less than %d)\n" "$BACKUP" "$BACKUP_AGE" "$BACKUP_TTL"
+      log_info "Purge $BACKUP (age $BACKUP_AGE is greater than $BACKUP_TTL)."
+      rclone --verbose purge "$DST_ROOT/$BACKUP" ||
+        log_warn "Error trying to purge $BACKUP."
+    else
+      log_debug "No purge needed for $BACKUP (age $BACKUP_AGE is less than $BACKUP_TTL)."
     fi
   done
 else
-  printf "BACKUP_TTL is invalid or not set. no backups will be purged\n"
+  log_info "BACKUP_TTL is invalid or not set. no backups will be purged."
 fi
